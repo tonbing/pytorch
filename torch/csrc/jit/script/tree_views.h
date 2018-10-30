@@ -423,6 +423,10 @@ struct AssignKind : public TreeView {
       case '*':
       case '/':
       case '%':
+      case TK_PLUS_EQ:
+      case TK_MINUS_EQ:
+      case TK_TIMES_EQ:
+      case TK_DIV_EQ:
         return;
       default:
         throw ErrorReport(tree) << "is not a valid AssignKind";

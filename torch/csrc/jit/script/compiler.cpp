@@ -1330,19 +1330,61 @@ private:
     return num_starred;
   }
 
-  void emitAssignment(const Assign& stmt) {
-    bool starred_unpack = calcNumStarredUnpack(stmt.lhs(), stmt.range());
-    if (stmt.reduction() != '=') {
-      if (stmt.lhs().size() != 1) {
-        throw ErrorReport(stmt)
-            << "reductions are only allowed when there is a single variable "
-            << "on the left-hand side.";
+  // Emit nodes for augmented assignments like `+=`
+  void emitAugAssignment(const Assign& stmt) {
+    if (stmt.lhs().size() != 1) {
+      throw ErrorReport(stmt)
+          << "reductions are only allowed when there is a single variable "
+          << "on the left-hand side.";
+    }
+    auto lhs = Var(stmt.lhs()[0]);
+    auto lhsValue = environment_stack->getSugaredVar(lhs.name())
+                        ->asValue(lhs.range(), method);
+    if (lhsValue->type()->isSubtypeOf(DynamicType::get())) {
+      // for tensors, emit the corresponding in-place op
+      Symbol op;
+      switch (stmt.reduction()) {
+        case '+':
+          op = aten::add_;
+          break;
+        case '-':
+          op = aten::sub_;
+          break;
+        case '/':
+          op = aten::div_;
+          break;
+        case '*':
+          op = aten::mul_;
+          break;
+        default:
+          throw ErrorReport(stmt) << "Unknown augmented assignment to Tensor";
       }
+
+      auto rhs = NamedValue(stmt.rhs().range(), emitExpr(stmt.rhs()));
+      auto self = NamedValue(lhs.range(), lhs.name().name(), lhsValue);
+      auto output = emitBuiltinCall(
+          stmt.range(),
+          *method.graph(),
+          op,
+          self,
+          {rhs},
+          {},
+          /*required=*/true);
+      environment_stack->setVar(lhs.range(), lhs.name().name(), output);
+    } else {
+      // for primitive types, desugar into a simple assignment
+      //   e.g. foo += 1 becomes foo.2 = foo + 1
       Ident lhs = Var(stmt.lhs()[0]).name();
       Expr expr = BinOp::create(stmt.range(), stmt.reduction(),
                                 Var::create(lhs.range(), lhs), stmt.rhs());
       environment_stack->setVar(lhs.range(), lhs.name(), emitExpr(expr));
-      return;
+    }
+  }
+
+  void emitAssignment(const Assign& stmt) {
+    bool starred_unpack = calcNumStarredUnpack(stmt.lhs(), stmt.range());
+    if (stmt.reduction() != '=') {
+      return emitAugAssignment(stmt);
     }
 
     size_t n_binders = stmt.lhs().size();
