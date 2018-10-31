@@ -166,8 +166,6 @@ inline IValue toIValue(py::handle obj, const TypePtr& type) {
         if (obj == Py_None)
             return {};
         return toIValue(obj, type->expect<OptionalType>()->getElementType());
-      case TypeKind::WorldType:
-        AT_ERROR("World arguments should not be passed in by users");
       case TypeKind::NumberType:
       case TypeKind::GeneratorType:
       case TypeKind::VarType:
